@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chore & Habit Tracker</title>
+  <style>
+    :root {
+      font-family: system-ui, sans-serif;
+      --accent: #4f46e5;
+      --light: #f3f4f6;
+      --radius: 0.75rem;
+    }
+    body {
+      margin: 0;
+      background: var(--light);
+      display: grid;
+      place-items: center;
+      min-height: 100vh;
+    }
+    .card {
+      background: white;
+      border-radius: var(--radius);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+      padding: 2rem;
+      width: min(95vw, 800px);
+    }
+    h1 {
+      text-align: center;
+      margin-top: 0;
+    }
+    form {
+      display: grid;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      font-weight: 600;
+    }
+    input[type="text"], select, input[type="file"] {
+      margin-top: 0.25rem;
+      padding: 0.5rem;
+      border: 1px solid #d1d5db;
+      border-radius: var(--radius);
+    }
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #3730a3;
+    }
+    .toggle {
+      margin-bottom: 1rem;
+      text-align: right;
+    }
+    .list {
+      display: grid;
+      gap: 1rem;
+    }
+    .item {
+      background: var(--light);
+      border-radius: var(--radius);
+      padding: 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem;
+    }
+    .item img {
+      height: 80px;
+      width: 80px;
+      object-fit: cover;
+      border-radius: var(--radius);
+      flex-shrink: 0;
+    }
+    .item-info {
+      flex: 1 1 200px;
+    }
+    .status {
+      font-weight: 700;
+      text-transform: capitalize;
+    }
+    .pending { color: #d97706; }
+    .approved { color: #16a34a; }
+    .denied { color: #dc2626; }
+    .actions {
+      display: flex;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Chore & Habit Tracker</h1>
+
+    <div class="toggle">
+      <label>
+        <input type="checkbox" id="parentMode" />
+        Parent mode
+      </label>
+    </div>
+
+    <form id="addForm">
+      <label>
+        Name
+        <input type="text" id="nameInput" required />
+      </label>
+      <label>
+        Type
+        <select id="typeSelect">
+          <option value="chore">Chore</option>
+          <option value="habit">Habit</option>
+        </select>
+      </label>
+      <button type="submit">Add</button>
+    </form>
+
+    <h2 id="listTitle">Your Items</h2>
+    <div class="list" id="itemList"></div>
+  </div>
+
+  <script>
+    /* === Utilities === */
+    const byId = (id) => document.getElementById(id);
+    const saveData = (data) => localStorage.setItem("choreData", JSON.stringify(data));
+    const loadData = () => JSON.parse(localStorage.getItem("choreData") || "[]");
+
+    let items = loadData();
+
+    /* === Elements === */
+    const addForm = byId("addForm");
+    const nameInput = byId("nameInput");
+    const typeSelect = byId("typeSelect");
+    const itemList = byId("itemList");
+    const parentModeCheckbox = byId("parentMode");
+    const listTitle = byId("listTitle");
+
+    /* === Render === */
+    function render() {
+      itemList.innerHTML = "";
+      const isParent = parentModeCheckbox.checked;
+      listTitle.textContent = isParent ? "Pending Approvals" : "Your Items";
+      const filtered = isParent ? items.filter((it) => it.status === "pending") : items;
+
+      filtered.forEach((item) => {
+        const div = document.createElement("div");
+        div.className = "item";
+
+        if (item.photo) {
+          const img = document.createElement("img");
+          img.src = item.photo;
+          div.appendChild(img);
+        }
+
+        const info = document.createElement("div");
+        info.className = "item-info";
+        info.innerHTML = `<strong>${item.name}</strong> <br/> (${item.type}) <br/> <span class="status ${item.status}">${item.status}</span>`;
+        div.appendChild(info);
+
+        if (!isParent && item.status === "todo") {
+          const fileInput = document.createElement("input");
+          fileInput.type = "file";
+          fileInput.accept = "image/*";
+          fileInput.addEventListener("change", (e) => handleFileUpload(e, item.id));
+          div.appendChild(fileInput);
+        }
+
+        if (isParent && item.status === "pending") {
+          const actions = document.createElement("div");
+          actions.className = "actions";
+          [
+            { txt: "Approve", newStatus: "approved" },
+            { txt: "Deny", newStatus: "denied" },
+          ].forEach(({ txt, newStatus }) => {
+            const btn = document.createElement("button");
+            btn.textContent = txt;
+            btn.addEventListener("click", () => updateStatus(item.id, newStatus));
+            actions.appendChild(btn);
+          });
+          div.appendChild(actions);
+        }
+
+        itemList.appendChild(div);
+      });
+
+      if (filtered.length === 0) {
+        itemList.innerHTML = "<p>Nothing here yet.</p>";
+      }
+    }
+
+    /* === Handlers === */
+    addForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const newItem = {
+        id: crypto.randomUUID(),
+        name: nameInput.value.trim(),
+        type: typeSelect.value,
+        photo: null,
+        status: "todo", // todo -> pending -> approved/denied
+      };
+      items.push(newItem);
+      saveData(items);
+      nameInput.value = "";
+      render();
+    });
+
+    parentModeCheckbox.addEventListener("change", render);
+
+    function handleFileUpload(e, id) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const idx = items.findIndex((it) => it.id === id);
+        items[idx].photo = ev.target.result;
+        items[idx].status = "pending";
+        saveData(items);
+        render();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function updateStatus(id, newStatus) {
+      const idx = items.findIndex((it) => it.id === id);
+      if (idx === -1) return;
+      items[idx].status = newStatus;
+      saveData(items);
+      render();
+    }
+
+    // Initial render
+    render();
+  </script>
+</body>
+</html>
